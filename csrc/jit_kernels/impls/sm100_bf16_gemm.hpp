@@ -114,7 +114,7 @@ static void sm100_bf16_gemm(const torch::Tensor& a,
                                                 config.storage_config.swizzle_cd_mode);
 
     // Launch
-    const SM100BF16GemmRuntime::Args& args = {
+    const SM100BF16GemmRuntime::Args args = {
         .gemm_desc = desc,
         .gemm_config = config,
         .launch_args = LaunchArgs(config.launch_config.num_sms, config.launch_config.num_threads,
@@ -301,7 +301,7 @@ static void sm100_bf16_k_grouped_gemm(const torch::Tensor& a,
                                                 config.storage_config.swizzle_cd_mode);
 
     // Launch kernel
-    const SM100BF16GemmRuntime::Args& args = {
+    const SM100BF16GemmRuntime::Args args = {
         .gemm_desc = desc,
         .gemm_config = config,
         .launch_args = LaunchArgs(config.launch_config.num_sms, config.launch_config.num_threads,
@@ -349,7 +349,7 @@ static void sm100_bf16_bhr_hdr_bhd(const torch::Tensor& tensor_a,
                                                 config.storage_config.swizzle_cd_mode);
 
     // Launch
-    const SM100BF16GemmRuntime::Args& args = {
+    const SM100BF16GemmRuntime::Args args = {
         .gemm_desc = desc,
         .gemm_config = config,
         .launch_args = LaunchArgs(config.launch_config.num_sms, config.launch_config.num_threads,
@@ -397,7 +397,7 @@ static void sm100_bf16_bhd_hdr_bhr(const torch::Tensor& tensor_a,
                                                 config.storage_config.swizzle_cd_mode);
 
     // Launch
-    const SM100BF16GemmRuntime::Args& args = {
+    const SM100BF16GemmRuntime::Args args = {
         .gemm_desc = desc,
         .gemm_config = config,
         .launch_args = LaunchArgs(config.launch_config.num_sms, config.launch_config.num_threads,
