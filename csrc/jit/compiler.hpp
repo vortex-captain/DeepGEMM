@@ -38,7 +38,11 @@ public:
         Compiler::library_root_path = library_root_path;
         Compiler::library_include_path = Compiler::library_root_path / "include";
         Compiler::cuda_home = cuda_home_path_by_python;
+#ifdef _WIN32
+        Compiler::cuobjdump_path = Compiler::cuda_home / "bin" / "cuobjdump.exe";
+#else
         Compiler::cuobjdump_path = Compiler::cuda_home / "bin" / "cuobjdump";
+#endif
     }
 
     std::string signature, flags;
@@ -63,8 +67,13 @@ public:
                             get_env<int>("DG_JIT_CPP_STANDARD", 20));
         if (get_env("DG_JIT_DEBUG", 0) or get_env("DG_JIT_PTXAS_VERBOSE", 0) or get_env("DG_JIT_PTXAS_CHECK", 0))
             flags += " --ptxas-options=--verbose,--warn-on-local-memory-usage";
-        if (get_env("DG_JIT_WITH_LINEINFO", 0))
+        if (get_env("DG_JIT_WITH_LINEINFO", 0)) {
+#ifdef _WIN32
+            flags += " -lineinfo";
+#else
             flags += " -Xcompiler -rdynamic -lineinfo";
+#endif
+        }
     }
 
     virtual ~Compiler() = default;
@@ -165,7 +174,12 @@ public:
 
     static void disassemble(const std::filesystem::path &cubin_path, const std::filesystem::path &sass_path) {
         // Disassemble the CUBIN file to SASS
+#ifdef _WIN32
+        const auto command = fmt::format("\"{}\" --dump-sass \"{}\" > \"{}\"",
+            cuobjdump_path.string(), cubin_path.string(), sass_path.string());
+#else
         const auto command = fmt::format("{} --dump-sass {} > {}", cuobjdump_path.string(), cubin_path.string(), sass_path.string());
+#endif
         if (get_env("DG_JIT_DEBUG", 0) or get_env("DG_JIT_PRINT_COMPILER_COMMAND", 0))
             printf("Running cuobjdump command: %s\n", command.c_str());
         const auto [return_code, output] = call_external_command(command);
@@ -190,7 +204,11 @@ class NVCCCompiler final: public Compiler {
         DG_HOST_ASSERT(std::filesystem::exists(nvcc_path));
 
         // Call the version command
+#ifdef _WIN32
+        const auto command = fmt::format("\"{}\" --version", nvcc_path.string());
+#else
         const auto command = nvcc_path.string() + " --version";
+#endif
         const auto [return_code, output] = call_external_command(command);
         DG_HOST_ASSERT(return_code == 0);
 
@@ -208,7 +226,11 @@ class NVCCCompiler final: public Compiler {
 public:
     NVCCCompiler() {
         // Override the compiler signature
+#ifdef _WIN32
+        nvcc_path = cuda_home / "bin" / "nvcc.exe";
+#else
         nvcc_path = cuda_home / "bin" / "nvcc";
+#endif
         if (const auto env_nvcc_path = get_env<std::string>("DG_JIT_NVCC_COMPILER"); not env_nvcc_path.empty())
             nvcc_path = env_nvcc_path;
         const auto [nvcc_major, nvcc_minor] = get_nvcc_version();
@@ -223,10 +245,20 @@ public:
         const auto arch_flag = device_runtime->get_arch_major() == 12
             ? fmt::format("-gencode=arch=compute_{},code=sm_{}", arch, arch)
             : fmt::format("--gpu-architecture=sm_{}", arch);
+#ifdef _WIN32
+        flags = fmt::format("{} -I\"{}\" {} "
+                            "-Xcompiler=/O2 -Xcompiler=/EHsc "
+                            "-Xcompiler=/Zc:__cplusplus "
+                            "-Xcompiler=/Zc:preprocessor "
+                            "-Xcompiler=/permissive- "
+                            "-O3 --expt-relaxed-constexpr --expt-extended-lambda",
+                            flags, library_include_path.string(), arch_flag);
+#else
         flags = fmt::format("{} -I{} {} "
                             "--compiler-options=-fPIC,-O3,-fconcepts,-Wno-deprecated-declarations,-Wno-abi "
                             "-O3 --expt-relaxed-constexpr --expt-extended-lambda",
                             flags, library_include_path.string(), arch_flag);
+#endif
     }
 
     void compile(const std::string &code, const std::filesystem::path& dir_path,
@@ -239,8 +271,13 @@ public:
         // Compile
         // Avoid cwd files shadowing C++ standard library headers
         const auto compile_dir = make_tmp_dir();
+#ifdef _WIN32
+        const auto command = fmt::format("cd /D \"{}\" && \"{}\" \"{}\" -cubin -o \"{}\" {}",
+            compile_dir.string(), nvcc_path.string(), code_path.string(), cubin_path.string(), flags);
+#else
         const auto command = fmt::format("cd {} && {} {} -cubin -o {} {}",
             compile_dir.string(), nvcc_path.string(), code_path.string(), cubin_path.string(), flags);
+#endif
         if (get_env("DG_JIT_DEBUG", 0) or get_env("DG_JIT_PRINT_COMPILER_COMMAND", 0))
             printf("Running NVCC command: %s\n", command.c_str());
         const auto [return_code, output] = call_external_command(command);
@@ -251,8 +288,13 @@ public:
 
         // Compile to PTX if needed
         if (ptx_path.has_value()) {
+#ifdef _WIN32
+            const auto ptx_command = fmt::format("cd /D \"{}\" && \"{}\" \"{}\" -ptx -o \"{}\" {}",
+                compile_dir.string(), nvcc_path.string(), code_path.string(), ptx_path->string(), flags);
+#else
             const auto ptx_command = fmt::format("cd {} && {} {} -ptx -o {} {}",
                 compile_dir.string(), nvcc_path.string(), code_path.string(), ptx_path->string(), flags);
+#endif
             if (get_env("DG_JIT_DEBUG", 0) or get_env("DG_JIT_PRINT_COMPILER_COMMAND", 0))
                 printf("Running NVCC PTX command: %s\n", ptx_command.c_str());
             const auto [ptx_return_code, ptx_output] = call_external_command(ptx_command);

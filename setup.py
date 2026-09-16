@@ -16,6 +16,7 @@ from packaging.version import parse
 from pathlib import Path
 from torch.utils.cpp_extension import CUDAExtension, CUDA_HOME
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
+from scripts.apply_cutlass_patch import apply_cutlass_patch
 from scripts.generate_pyi import generate_pyi_file
 
 
@@ -25,10 +26,24 @@ DG_USE_LOCAL_VERSION = int(os.getenv('DG_USE_LOCAL_VERSION', '1')) == 1
 DG_JIT_USE_RUNTIME_API = int(os.environ.get('DG_JIT_USE_RUNTIME_API', '0')) == 1
 
 # Compiler flags
-cxx_flags = ['-std=c++17', '-O3', '-fPIC', '-Wno-psabi', '-Wno-deprecated-declarations',
-             f'-D_GLIBCXX_USE_CXX11_ABI={int(torch.compiled_with_cxx11_abi())}']
+if sys.platform == 'win32':
+    cxx_flags = [
+        '/std:c++20',
+        '/O2',
+        '/permissive-',
+        '/utf-8',
+        '/DNOMINMAX',
+        '/Zc:preprocessor',
+    ]
+else:
+    cxx_flags = ['-std=c++17', '-O3', '-fPIC', '-Wno-psabi', '-Wno-deprecated-declarations',
+                 f'-D_GLIBCXX_USE_CXX11_ABI={int(torch.compiled_with_cxx11_abi())}']
 if DG_JIT_USE_RUNTIME_API:
-    cxx_flags.append('-DDG_JIT_USE_RUNTIME_API')
+    cxx_flags.append(
+        '/DDG_JIT_USE_RUNTIME_API'
+        if sys.platform == 'win32'
+        else '-DDG_JIT_USE_RUNTIME_API'
+    )
 
 # Sources
 current_dir = os.path.dirname(os.path.realpath(__file__))
@@ -40,8 +55,19 @@ build_include_dirs = [
     'third-party/cutlass/include',
     'third-party/fmt/include',
 ]
+if cuda_include_overlay := os.getenv('DG_CUDA_INCLUDE_OVERLAY'):
+    build_include_dirs.insert(0, cuda_include_overlay)
 build_libraries = ['cudart', 'nvrtc']
-build_library_dirs = [f'{CUDA_HOME}/lib64']
+if sys.platform == 'win32':
+    build_libraries += ['cublas', 'cublasLt']
+    cuda_library_arch = (
+        'arm64'
+        if platform.machine().lower() in ('arm64', 'aarch64')
+        else 'x64'
+    )
+    build_library_dirs = [f'{CUDA_HOME}/lib/{cuda_library_arch}']
+else:
+    build_library_dirs = [f'{CUDA_HOME}/lib64']
 third_party_include_dirs = [
     'third-party/cutlass/include/cute',
     'third-party/cutlass/include/cutlass',
@@ -102,6 +128,15 @@ def get_wheel_url():
 def get_ext_modules():
     if DG_SKIP_CUDA_BUILD:
         return []
+
+    if sys.platform == 'win32':
+        if (Path(current_dir) / '.git').exists():
+            subprocess.check_call(
+                ['git', 'submodule', 'update', '--init',
+                 str(Path('third-party') / 'cutlass'),
+                 str(Path('third-party') / 'fmt')],
+                cwd=current_dir)
+        apply_cutlass_patch(Path(current_dir) / 'third-party' / 'cutlass')
 
     return [CUDAExtension(name='deep_gemm._C',
                           sources=sources,

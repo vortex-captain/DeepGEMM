@@ -16,7 +16,9 @@ CUTLASS_HOST_DEVICE void host_device_printf(const char* format, ...) {
 #define printf host_device_printf
 #endif
 
-#ifdef _MSC_VER
+#if defined(__CUDA_ARCH__) || defined(__CUDACC_RTC__)
+#define DG_TRAP() __trap()
+#elif defined(_MSC_VER)
 #define DG_TRAP() __debugbreak()
 #else
 #define DG_TRAP() asm("trap;")
