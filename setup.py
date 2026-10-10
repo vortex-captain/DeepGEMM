@@ -29,9 +29,11 @@ if sys.platform == 'win32':
     cxx_flags = [
         '/std:c++20',
         '/O2',
+        '/bigobj',
         '/permissive-',
         '/utf-8',
         '/DNOMINMAX',
+        '/DWIN32_LEAN_AND_MEAN',
         '/Zc:preprocessor',
         '/DPy_LIMITED_API=0x030a0000',
         '/DDJ_DISABLE_GIL=1',
